@@ -34,3 +34,52 @@ def init_db():
             created_at TEXT
         )
     """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS grievances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            grievance_code TEXT UNIQUE NOT NULL,
+            mobile TEXT,
+            name TEXT,
+            category TEXT,
+            description TEXT,
+            lat REAL,
+            lng REAL,
+            address TEXT,
+            ward TEXT,
+            city TEXT,
+            photo_path TEXT,
+            priority TEXT DEFAULT 'Medium',
+            department TEXT,
+            status TEXT DEFAULT 'Submitted',
+            upvote_count INTEGER DEFAULT 0,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS status_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            grievance_code TEXT NOT NULL,
+            status TEXT,
+            remark TEXT,
+            updated_by TEXT,
+            timestamp TEXT
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS upvotes (
+            grievance_code TEXT NOT NULL,
+            mobile TEXT NOT NULL,
+            PRIMARY KEY (grievance_code, mobile)
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def now_str():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
