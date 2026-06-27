@@ -1,25 +1,19 @@
 """
-app.py
-------
 Nagar Seva — Citizen Grievance Portal for Municipal Issues (India)
-
-Run with:  streamlit run app.py
 """
+#Run with streamlit run
+#command: streamlit run app.py
 
 import os
 import io
 from datetime import datetime
-
 import streamlit as st
 import pandas as pd
-
 import database as db
 import utils
 from translations import t
 
-# ---------------------------------------------------------------------------
 # Setup
-# ---------------------------------------------------------------------------
 
 st.set_page_config(page_title="Nagar Seva | Citizen Grievance Portal", page_icon="🇮🇳", layout="wide")
 
@@ -28,7 +22,7 @@ db.init_db()
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-ADMIN_PASSWORD = "swachh2026"  # demo only — replace with proper auth & secrets management in production
+ADMIN_PASSWORD = "Prithu2005"  # demo only — replace with proper authorised & secrets management in production
 
 if "lang" not in st.session_state:
     st.session_state.lang = "en"
@@ -39,14 +33,10 @@ if "name" not in st.session_state:
 if "otp_sent" not in st.session_state:
     st.session_state.otp_sent = False
 
-
 def L(key):
     return t(key, st.session_state.lang)
 
-
-# ---------------------------------------------------------------------------
 # Sidebar — language, login, navigation
-# ---------------------------------------------------------------------------
 
 with st.sidebar:
     st.markdown("### 🇮🇳 " + L("app_title"))
@@ -112,16 +102,12 @@ with st.sidebar:
     for label, number in list(utils.EMERGENCY_NUMBERS.items())[:4]:
         st.caption(f"{label}: **{number}**")
 
-
 def require_login():
     if st.session_state.mobile is None:
         st.warning("Please log in from the sidebar (name + mobile + OTP) to continue.")
         st.stop()
 
-
-# ---------------------------------------------------------------------------
 # HOME
-# ---------------------------------------------------------------------------
 
 if page == L("nav_home"):
     st.title("🇮🇳 " + L("app_title"))
@@ -155,9 +141,7 @@ if page == L("nav_home"):
         with cols[i % 3]:
             st.caption(f"{cat} → *{dept}*")
 
-# ---------------------------------------------------------------------------
 # REPORT A GRIEVANCE
-# ---------------------------------------------------------------------------
 
 elif page == L("nav_report"):
     st.title(L("nav_report"))
@@ -206,6 +190,7 @@ elif page == L("nav_report"):
     photo = st.file_uploader("📸 Attach a photo (optional)", type=["jpg", "jpeg", "png"])
 
     # Duplicate / nearby-issue check
+
     if lat and lng:
         nearby = db.find_nearby(lat, lng, category, radius_km=0.3)
         if nearby:
@@ -247,9 +232,7 @@ elif page == L("nav_report"):
                        f"You've earned {utils.POINTS_FOR_REPORT} Swachh Citizen points!")
             st.balloons()
 
-# ---------------------------------------------------------------------------
 # TRACK MY GRIEVANCE
-# ---------------------------------------------------------------------------
 
 elif page == L("nav_track"):
     st.title(L("nav_track"))
@@ -298,9 +281,7 @@ elif page == L("nav_track"):
                                                "upvote_count", "created_at"]]
             st.dataframe(df, use_container_width=True, hide_index=True)
 
-# ---------------------------------------------------------------------------
 # COMMUNITY MAP & ISSUES
-# ---------------------------------------------------------------------------
 
 elif page == L("nav_map"):
     st.title(L("nav_map"))
@@ -326,9 +307,7 @@ elif page == L("nav_map"):
         st.download_button("⬇️ Download as CSV", df.to_csv(index=False).encode("utf-8"),
                             file_name="nagar_seva_grievances.csv", mime="text/csv")
 
-# ---------------------------------------------------------------------------
 # LEADERBOARD
-# ---------------------------------------------------------------------------
 
 elif page == L("nav_leaderboard"):
     st.title(L("nav_leaderboard"))
@@ -354,9 +333,7 @@ elif page == L("nav_leaderboard"):
     else:
         st.info("No citizens registered yet.")
 
-# ---------------------------------------------------------------------------
 # AWARENESS CORNER
-# ---------------------------------------------------------------------------
 
 elif page == L("nav_awareness"):
     st.title(L("nav_awareness"))
@@ -382,9 +359,7 @@ elif page == L("nav_awareness"):
     for i, (label, number) in enumerate(items):
         cols[0 if i < half else 1].write(f"{label}: **{number}**")
 
-# ---------------------------------------------------------------------------
 # ADMIN PANEL
-# ---------------------------------------------------------------------------
 
 elif page == L("nav_admin"):
     st.title(L("nav_admin"))
