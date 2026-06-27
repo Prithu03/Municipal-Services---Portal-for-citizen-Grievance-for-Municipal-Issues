@@ -1,64 +1,143 @@
 """
-Lightweight bilingual support (English / Hindi) for core UI strings.
-Structured so additional regional languages (Marathi, Tamil, Bengali, etc.)
-can be added later by extending the TRANSLATIONS dict.
+Handles translations for multilingual support
 """
+
+# Translation dictionaries
 TRANSLATIONS = {
-    "en": {
-        "app_title": "Municipal Services — Citizen Grievance Portal",
-        "tagline": "Report it. Track it. Build a cleaner, more systematic India — one ward at a time.",
-        "nav_home": "🏠 Home",
-        "nav_report": "📝 Report a Grievance",
-        "nav_track": "🔍 Track My Grievance",
-        "nav_map": "🗺️ Community Map & Issues",
-        "nav_leaderboard": "🏆 Swachh Ward Leaderboard",
-        "nav_awareness": "📅 Awareness Corner",
-        "nav_admin": "🔐 Municipal Admin Panel",
-        "login_name": "Your Name",
-        "login_mobile": "Mobile Number (10 digit)",
-        "login_ward": "Ward / Locality",
-        "login_city": "City",
-        "login_button": "Continue",
-        "welcome": "Welcome",
-        "total_reported": "Total Reported",
-        "total_resolved": "Resolved",
-        "total_pending": "Pending",
-        "category": "Category",
-        "description": "Describe the issue",
-        "location_method": "How would you like to add the location?",
-        "submit": "Submit Grievance",
-        "status": "Status",
-        "your_points": "Swachh Citizen Points",
+    'en': {
+        'app_name': 'Nagar Seva',
+        'app_subtitle': 'Your Voice for Better Cities',
+        'welcome': 'Welcome',
+        'login': 'Login',
+        'register': 'Register',
+        'logout': 'Logout',
+        'report': 'Report a Grievance',
+        'track': 'Track Grievance',
+        'view_all': 'View All Grievances',
+        'search': 'Search Grievances',
+        'leaderboard': 'Leaderboard',
+        'statistics': 'Statistics',
+        'admin': 'Admin Panel',
+        'exit': 'Exit',
+        'name': 'Name',
+        'mobile': 'Mobile Number',
+        'ward': 'Ward/Locality',
+        'city': 'City',
+        'otp': 'OTP',
+        'category': 'Category',
+        'description': 'Description',
+        'location': 'Location',
+        'status': 'Status',
+        'upvotes': 'Upvotes',
+        'points': 'Points',
+        'date': 'Date',
+        'success': 'Success',
+        'error': 'Error',
+        'info': 'Information',
+        'warning': 'Warning',
+        'yes': 'Yes',
+        'no': 'No',
+        'cancel': 'Cancel',
+        'confirm': 'Confirm',
+        'required': 'This field is required',
+        'invalid': 'Invalid input',
+        'not_found': 'Not found',
+        'already_exists': 'Already exists',
+        'no_data': 'No data available',
+        'loading': 'Loading...',
+        'processing': 'Processing...'
     },
-    "hi": {
-        "app_title": "नगर सेवा — नागरिक शिकायत पोर्टल",
-        "tagline": "शिकायत दर्ज करें। स्थिति देखें। एक साफ़ और व्यवस्थित भारत बनाएं — एक वार्ड से शुरुआत।",
-        "nav_home": "🏠 होम",
-        "nav_report": "📝 शिकायत दर्ज करें",
-        "nav_track": "🔍 मेरी शिकायत ट्रैक करें",
-        "nav_map": "🗺️ सामुदायिक मानचित्र व समस्याएँ",
-        "nav_leaderboard": "🏆 स्वच्छ वार्ड लीडरबोर्ड",
-        "nav_awareness": "📅 जागरूकता कॉर्नर",
-        "nav_admin": "🔐 नगर निगम एडमिन पैनल",
-        "login_name": "आपका नाम",
-        "login_mobile": "मोबाइल नंबर (10 अंक)",
-        "login_ward": "वार्ड / मोहल्ला",
-        "login_city": "शहर",
-        "login_button": "आगे बढ़ें",
-        "welcome": "नमस्ते / स्वागत है",
-        "total_reported": "कुल शिकायतें",
-        "total_resolved": "सुलझी हुई",
-        "total_pending": "लंबित",
-        "category": "श्रेणी",
-        "description": "समस्या का विवरण दें",
-        "location_method": "आप स्थान कैसे जोड़ना चाहेंगे?",
-        "submit": "शिकायत दर्ज करें",
-        "status": "स्थिति",
-        "your_points": "स्वच्छ नागरिक अंक",
-    },
+    'hi': {
+        'app_name': 'नगर सेवा',
+        'app_subtitle': 'बेहतर शहरों के लिए आपकी आवाज',
+        'welcome': 'स्वागत है',
+        'login': 'लॉगिन',
+        'register': 'पंजीकरण',
+        'logout': 'लॉगआउट',
+        'report': 'शिकायत दर्ज करें',
+        'track': 'शिकायत ट्रैक करें',
+        'view_all': 'सभी शिकायतें देखें',
+        'search': 'शिकायत खोजें',
+        'leaderboard': 'लीडरबोर्ड',
+        'statistics': 'आंकड़े',
+        'admin': 'प्रशासक पैनल',
+        'exit': 'बाहर जाएं',
+        'name': 'नाम',
+        'mobile': 'मोबाइल नंबर',
+        'ward': 'वार्ड/इलाका',
+        'city': 'शहर',
+        'otp': 'ओटीपी',
+        'category': 'श्रेणी',
+        'description': 'विवरण',
+        'location': 'स्थान',
+        'status': 'स्थिति',
+        'upvotes': 'समर्थन',
+        'points': 'अंक',
+        'date': 'तारीख',
+        'success': 'सफलता',
+        'error': 'त्रुटि',
+        'info': 'जानकारी',
+        'warning': 'चेतावनी',
+        'yes': 'हाँ',
+        'no': 'नहीं',
+        'cancel': 'रद्द करें',
+        'confirm': 'पुष्टि करें',
+        'required': 'यह फ़ील्ड आवश्यक है',
+        'invalid': 'अमान्य इनपुट',
+        'not_found': 'नहीं मिला',
+        'already_exists': 'पहले से मौजूद है',
+        'no_data': 'कोई डेटा उपलब्ध नहीं',
+        'loading': 'लोड हो रहा है...',
+        'processing': 'प्रक्रिया हो रही है...'
+    }
 }
 
+# Default language
+DEFAULT_LANGUAGE = 'en'
 
-def t(key, lang="en"):
-    """Translate a key; falls back to English, then to the key itself."""
-    return TRANSLATIONS.get(lang, {}).get(key) or TRANSLATIONS["en"].get(key, key)
+class Translator:
+    """Handle translations"""
+    
+    def __init__(self, language='en'):
+        self.language = language
+    
+    def set_language(self, language):
+        """Set current language"""
+        if language in TRANSLATIONS:
+            self.language = language
+            return True
+        return False
+    
+    def get(self, key):
+        """Get translated text for a key"""
+        # Get translation for current language
+        if self.language in TRANSLATIONS and key in TRANSLATIONS[self.language]:
+            return TRANSLATIONS[self.language][key]
+        
+        # Fallback to English
+        if key in TRANSLATIONS['en']:
+            return TRANSLATIONS['en'][key]
+        
+        # Return the key itself if not found
+        return key
+    
+    def get_all_languages(self):
+        """Get list of available languages"""
+        return list(TRANSLATIONS.keys())
+    
+    def get_language_name(self, lang_code):
+        """Get display name for language code"""
+        names = {
+            'en': 'English',
+            'hi': 'हिंदी'
+        }
+        return names.get(lang_code, lang_code)
+
+# Create a default translator instance
+default_translator = Translator()
+
+# Helper function for quick translation
+def t(key, lang='en'):
+    """Quick translation function"""
+    translator = Translator(lang)
+    return translator.get(key)
