@@ -1,432 +1,428 @@
 """
-Nagar Seva — Citizen Grievance Portal for Municipal Issues (India)
+Main application logic for Nagar Seva
 """
-#Run with streamlit run
-#command: streamlit run app.py
 
 import os
-import io
-from datetime import datetime
-import streamlit as st
-import pandas as pd
-import database as db
-import utils
-from translations import t
+from database import Database, UserDB, GrievanceDB, HistoryDB, UpvoteDB
+from utils import *
+from translations import t, Translator
 
-# Setup
-
-st.set_page_config(page_title="Nagar Seva | Citizen Grievance Portal", page_icon="🇮🇳", layout="wide")
-
-db.init_db()
-
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-ADMIN_PASSWORD = "Prithu2005"  # demo only — replace with proper authorised & secrets management in production
-
-if "lang" not in st.session_state:
-    st.session_state.lang = "en"
-if "mobile" not in st.session_state:
-    st.session_state.mobile = None
-if "name" not in st.session_state:
-    st.session_state.name = None
-if "otp_sent" not in st.session_state:
-    st.session_state.otp_sent = False
-
-def L(key):
-    return t(key, st.session_state.lang)
-
-# Sidebar — language, login, navigation
-
-with st.sidebar:
-    st.markdown("### 🇮🇳 " + L("app_title"))
-    st.caption(L("tagline"))
-
-    lang_choice = st.radio("Language / भाषा", ["English", "हिंदी"], horizontal=True,
-                            index=0 if st.session_state.lang == "en" else 1)
-    st.session_state.lang = "en" if lang_choice == "English" else "hi"
-
-    st.divider()
-
-    if st.session_state.mobile is None:
-        st.markdown(f"**{L('login_name')} / {L('login_mobile')}**")
-        name_in = st.text_input(L("login_name"), key="login_name_input")
-        mobile_in = st.text_input(L("login_mobile"), max_chars=10, key="login_mobile_input")
-        ward_in = st.text_input(L("login_ward"), key="login_ward_input")
-        city_in = st.text_input(L("login_city"), key="login_city_input")
-
-        if not st.session_state.otp_sent:
-            if st.button("📩 Send OTP / ओटीपी भेजें"):
-                if mobile_in and len(mobile_in) == 10 and mobile_in.isdigit() and name_in:
-                    st.session_state.otp_sent = True
-                    st.session_state.pending_name = name_in
-                    st.session_state.pending_mobile = mobile_in
-                    st.session_state.pending_ward = ward_in
-                    st.session_state.pending_city = city_in
-                    st.info("Demo OTP sent: **123456** (In production this would use a "
-                            "registered SMS gateway provider.)")
-                else:
-                    st.warning("Please enter your name and a valid 10-digit mobile number.")
+class MunicipalServicesApp:
+    #Main application class
+    
+    def __init__(self):
+        # Initialize database
+        self.db = Database()
+        
+        # Initialize database handlers
+        self.user_db = UserDB(self.db)
+        self.grievance_db = GrievanceDB(self.db)
+        self.history_db = HistoryDB(self.db)
+        self.upvote_db = UpvoteDB(self.db)
+        
+        # Application state
+        self.current_user = None
+        self.translator = Translator('en')
+        self.running = True
+        
+        # Display startup info
+        self.print_startup_info()
+    
+    def print_startup_info(self):
+        """Print startup information"""
+        print("\n" + "="*60)
+        print("  🇮🇳 NAGAR SEVA - Citizen Grievance Portal")
+        print("  Your Voice for Better Cities")
+        print("="*60)
+        print(f"\n💡 Demo OTP: {DEMO_OTP}")
+        print(f"💡 Admin Password: {ADMIN_PASSWORD}")
+        print("\n📱 Make sure MySQL is running!")
+        print("="*60)
+    
+    def clear_screen(self):
+        """Clear the terminal screen"""
+        os.system('cls' if os.name == 'nt' else 'clear')
+    
+    def t(self, key):
+        """Translate a key"""
+        return self.translator.get(key)
+    
+    def display_header(self):
+        """Display application header"""
+        print("\n" + "="*60)
+        print(f"  🇮🇳 {self.t('app_name')}")
+        print(f"  {self.t('app_subtitle')}")
+        print("="*60)
+    
+    def display_user_info(self):
+        """Display current user information"""
+        if self.current_user:
+            print(f"\n👋 {self.t('welcome')}, {self.current_user['name']}!")
+            print(f"📱 {self.t('mobile')}: {self.current_user['mobile']}")
+            print(f"🏆 {self.t('points')}: {self.current_user['points']}")
+            print("-"*40)
+    
+    def display_menu(self):
+        """Display main menu"""
+        self.display_user_info()
+        
+        if self.current_user:
+            print("\n📋 MAIN MENU:")
+            print("  1. Report a Grievance")
+            print("  2. View My Grievances")
+            print("  3. Track Grievance by ID")
+            print("  4. View All Grievances")
+            print("  5. Upvote a Grievance")
+            print("  6. Search Grievances")
+            print("  7. View Leaderboard")
+            print("  8. View Statistics")
+            print("  9. Admin Panel")
+            print("  0. Logout")
         else:
-            otp_in = st.text_input("Enter OTP / ओटीपी दर्ज करें", max_chars=6)
-            if st.button(L("login_button")):
-                if otp_in == "123456":
-                    db.upsert_user(st.session_state.pending_name, st.session_state.pending_mobile,
-                                    st.session_state.pending_ward, st.session_state.pending_city,
-                                    st.session_state.lang)
-                    st.session_state.mobile = st.session_state.pending_mobile
-                    st.session_state.name = st.session_state.pending_name
-                    st.session_state.otp_sent = False
-                    st.rerun()
-                else:
-                    st.error("Incorrect OTP. (Hint for demo: 123456)")
-    else:
-        user = db.get_user(st.session_state.mobile)
-        st.success(f"{L('welcome')}, {st.session_state.name} 👋")
-        if user:
-            st.metric(L("your_points"), user["points"])
-        if st.button("Logout / लॉगआउट"):
-            st.session_state.mobile = None
-            st.session_state.name = None
-            st.rerun()
-
-    st.divider()
-    page = st.radio(
-        "Navigate",
-        [L("nav_home"), L("nav_report"), L("nav_track"), L("nav_map"),
-         L("nav_leaderboard"), L("nav_awareness"), L("nav_admin")],
-    )
-
-    st.divider()
-    st.caption("🚨 Emergency Numbers")
-    for label, number in list(utils.EMERGENCY_NUMBERS.items())[:4]:
-        st.caption(f"{label}: **{number}**")
-
-def require_login():
-    if st.session_state.mobile is None:
-        st.warning("Please log in from the sidebar (name + mobile + OTP) to continue.")
-        st.stop()
-
-# HOME
-
-if page == L("nav_home"):
-    st.title("🇮🇳 " + L("app_title"))
-    st.markdown(f"#### {L('tagline')}")
-
-    fest = utils.get_upcoming_festival(days_window=10)
-    if fest:
-        st.info(f"📅 **Upcoming: {fest['name']}** ({fest['date']}) — {fest['tip']}")
-
-    stats = db.get_stats()
-    c1, c2, c3 = st.columns(3)
-    c1.metric("📋 " + L("total_reported"), stats["total"])
-    c2.metric("🟢 " + L("total_resolved"), stats["resolved"])
-    c3.metric("🟡 " + L("total_pending"), stats["pending"])
-
-    st.markdown("---")
-    st.markdown("""
-    ### Why Nagar Seva?
-    India's cities and towns run on the active participation of citizens. This portal lets you:
-    - 📍 **Pin the exact location** of a civic issue (paste a Google Maps link or enter coordinates)
-    - 📸 Attach a photo as evidence
-    - 🔄 **Track status** end-to-end: Submitted → Acknowledged → In Progress → Resolved
-    - 👍 **Upvote** existing reports instead of duplicating them, so officials see real community impact
-    - 🏆 Earn **Swachh Citizen points** and see your ward climb a cleanliness leaderboard
-    - 🗣️ Use the portal in **English or Hindi**, with more Indian languages plannable
-    """)
-
-    st.markdown("##### Departments & categories covered")
-    cols = st.columns(3)
-    for i, (cat, dept) in enumerate(utils.CATEGORIES.items()):
-        with cols[i % 3]:
-            st.caption(f"{cat} → *{dept}*")
-
-# REPORT A GRIEVANCE
-
-elif page == L("nav_report"):
-    st.title(L("nav_report"))
-    require_login()
-
-    category = st.selectbox(L("category"), list(utils.CATEGORIES.keys()))
-    description = st.text_area(L("description"), height=120,
-                                placeholder="e.g., Garbage has not been collected for 5 days near Shastri Nagar bus stop...")
-
-    suggested_priority = utils.detect_priority(description)
-    if suggested_priority == "High":
-        st.warning("⚠️ This sounds safety-critical — priority auto-set to **High**. "
-                    "If this is a life-threatening emergency, please also call 112 immediately.")
-    priority = st.select_slider("Priority", options=["Low", "Medium", "High"],
-                                 value=suggested_priority)
-
-    st.markdown(f"**{L('location_method')}**")
-    loc_tab1, loc_tab2 = st.tabs(["📎 Paste Google Maps Link", "✍️ Enter Manually"])
-
-    lat = lng = None
-    with loc_tab1:
-        maps_link = st.text_input("Paste a Google Maps share link or 'lat,lng' "
-                                   "(e.g., shared via WhatsApp)")
-        if maps_link:
-            parsed = utils.parse_google_maps_link(maps_link)
-            if parsed:
-                lat, lng = parsed
-                st.success(f"📍 Location detected: {lat}, {lng}")
-                st.map(pd.DataFrame([{"lat": lat, "lon": lng}]), zoom=14)
-            else:
-                st.error("Could not read coordinates from that link/text. Try the Manual tab.")
-
-    with loc_tab2:
-        col_a, col_b = st.columns(2)
-        man_lat = col_a.number_input("Latitude", value=0.0, format="%.6f", key="man_lat")
-        man_lng = col_b.number_input("Longitude", value=0.0, format="%.6f", key="man_lng")
-        if man_lat != 0.0 and man_lng != 0.0:
-            lat, lng = man_lat, man_lng
-
-    address = st.text_input("Landmark / Address (optional, helps the field team)")
-    col1, col2 = st.columns(2)
-    _user = db.get_user(st.session_state.mobile) if st.session_state.mobile else None
-    ward = col1.text_input(L("login_ward"), value=(_user.get("ward", "") if _user else ""))
-    city = col2.text_input(L("login_city"), value=(_user.get("city", "") if _user else ""))
-
-    photo = st.file_uploader("📸 Attach a photo (optional)", type=["jpg", "jpeg", "png"])
-
-    # Duplicate / nearby-issue check
-
-    if lat and lng:
-        nearby = db.find_nearby(lat, lng, category, radius_km=0.3)
-        if nearby:
-            st.info(f"ℹ️ {len(nearby)} similar open report(s) found within ~300m. "
-                     "Consider upvoting instead of creating a duplicate:")
-            for n in nearby[:3]:
-                cols = st.columns([4, 1])
-                cols[0].write(f"**{n['grievance_code']}** — {n['description'][:80]}... "
-                               f"({utils.STATUS_COLORS.get(n['status'],'')} {n['status']}, "
-                               f"👍 {n['upvote_count']})")
-                if cols[1].button("👍 Upvote", key=f"up_{n['grievance_code']}"):
-                    if db.add_upvote(n["grievance_code"], st.session_state.mobile):
-                        db.add_points(st.session_state.mobile, utils.POINTS_FOR_UPVOTE)
-                        st.success("Upvoted! Thanks for confirming this is a real, ongoing issue.")
-                        st.rerun()
-                    else:
-                        st.warning("You've already upvoted this report.")
-
-    if st.button(L("submit"), type="primary"):
-        if not description.strip():
-            st.error("Please describe the issue.")
+            print("\n📋 MAIN MENU:")
+            print("  1. Register")
+            print("  2. Login")
+            print("  3. View All Grievances")
+            print("  4. Search Grievances")
+            print("  5. View Leaderboard")
+            print("  6. View Statistics")
+            print("  0. Exit")
+    
+    def get_choice(self):
+        """Get user's menu choice"""
+        try:
+            choice = input("\n👉 Enter your choice: ").strip()
+            return choice
+        except KeyboardInterrupt:
+            print("\n\n👋 Thank you for using Nagar Seva!")
+            self.running = False
+            return '0'
+    
+    # USER OPERATIONS
+    
+    def register_user(self):
+        """Handle user registration"""
+        self.clear_screen()
+        print_header("📝 REGISTER NEW USER")
+        
+        name = input("Enter your name: ").strip()
+        mobile = input("Enter mobile number (10 digits): ").strip()
+        ward = input("Enter your ward/locality: ").strip()
+        city = input("Enter your city: ").strip()
+        
+        # Validate input
+        if not all([name, mobile, ward, city]):
+            print("\n❌ All fields are required!")
+            input("\nPress Enter to continue...")
+            return
+        
+        if not validate_mobile(mobile):
+            print("\n❌ Please enter a valid 10-digit mobile number!")
+            input("\nPress Enter to continue...")
+            return
+        
+        # Check if user exists
+        existing_user = self.user_db.get_user_by_mobile(mobile)
+        if existing_user:
+            print("\n❌ User already exists!")
+            input("\nPress Enter to continue...")
+            return
+        
+        # Create user
+        result = self.user_db.create_user(name, mobile, ward, city)
+        
+        if result:
+            print(f"\n✅ Registration successful! Welcome {name}!")
         else:
-            department = utils.CATEGORIES[category]
-            code = db.create_grievance(
-                mobile=st.session_state.mobile, name=st.session_state.name, category=category,
-                description=description, lat=lat, lng=lng, address=address,
-                ward=ward, city=city, photo_path=None, priority=priority, department=department,
-            )
-            if photo is not None:
-                ext = os.path.splitext(photo.name)[1] or ".jpg"
-                save_path = os.path.join(UPLOAD_DIR, f"{code}{ext}")
-                with open(save_path, "wb") as f:
-                    f.write(photo.getbuffer())
-                db.update_photo_path(code, save_path)
-
-            db.add_points(st.session_state.mobile, utils.POINTS_FOR_REPORT)
-            st.success(f"✅ Grievance registered! Your tracking ID is **{code}**. "
-                       f"Save this ID — you'll need it to track status. "
-                       f"You've earned {utils.POINTS_FOR_REPORT} Swachh Citizen points!")
-            st.balloons()
-
-# TRACK MY GRIEVANCE
-
-elif page == L("nav_track"):
-    st.title(L("nav_track"))
-
-    tab1, tab2 = st.tabs(["🔎 Search by Tracking ID", "📜 My Grievance History"])
-
-    with tab1:
-        code_in = st.text_input("Enter Grievance ID (e.g., MCG-2026-000001)").strip().upper()
-        if code_in:
-            g = db.get_grievance_by_code(code_in)
-            if not g:
-                st.error("No grievance found with that ID.")
-            else:
-                st.subheader(f"{g['category']}  —  {utils.STATUS_COLORS.get(g['status'],'')} {g['status']}")
-                st.write(f"**Description:** {g['description']}")
-                st.write(f"**Department:** {g['department']}  |  **Priority:** {g['priority']}  "
-                         f"|  **Upvotes:** 👍 {g['upvote_count']}")
-                if g["lat"] and g["lng"]:
-                    st.map(pd.DataFrame([{"lat": g["lat"], "lon": g["lng"]}]), zoom=14)
-                if g["photo_path"] and os.path.exists(g["photo_path"]):
-                    st.image(g["photo_path"], caption="Citizen-submitted photo", width=300)
-
-                st.markdown("##### Status Timeline")
-                for h in db.get_status_history(code_in):
-                    st.write(f"{utils.STATUS_COLORS.get(h['status'],'')} **{h['status']}** "
-                             f"— {h['timestamp']} ({h['updated_by']})")
-                    if h["remark"]:
-                        st.caption(f"📝 {h['remark']}")
-
-                if st.session_state.mobile and st.session_state.mobile != g["mobile"]:
-                    if st.button("👍 I'm facing this too — Upvote"):
-                        if db.add_upvote(code_in, st.session_state.mobile):
-                            db.add_points(st.session_state.mobile, utils.POINTS_FOR_UPVOTE)
-                            st.success("Upvoted!")
-                            st.rerun()
-                        else:
-                            st.info("You've already upvoted this.")
-
-    with tab2:
-        require_login()
-        my_grievances = db.get_grievances_by_mobile(st.session_state.mobile)
-        if not my_grievances:
-            st.info("You haven't filed any grievances yet.")
+            print("\n❌ Registration failed!")
+        
+        input("\nPress Enter to continue...")
+    
+    def login_user(self):
+        """Handle user login"""
+        self.clear_screen()
+        print_header("🔐 LOGIN")
+        
+        mobile = input("Enter your mobile number: ").strip()
+        
+        if not validate_mobile(mobile):
+            print("\n❌ Please enter a valid 10-digit mobile number!")
+            input("\nPress Enter to continue...")
+            return
+        
+        # Check if user exists
+        user = self.user_db.get_user_by_mobile(mobile)
+        if not user:
+            print("\n❌ User not found! Please register first.")
+            input("\nPress Enter to continue...")
+            return
+        
+        print(f"\n📩 Demo OTP sent to {mobile}")
+        otp = input("Enter OTP: ").strip()
+        
+        if otp == DEMO_OTP:
+            self.current_user = user
+            print(f"\n✅ Welcome back {user['name']}!")
         else:
-            df = pd.DataFrame(my_grievances)[["grievance_code", "category", "status", "priority",
-                                               "upvote_count", "created_at"]]
-            st.dataframe(df, use_container_width=True, hide_index=True)
-
-# COMMUNITY MAP & ISSUES
-
-elif page == L("nav_map"):
-    st.title(L("nav_map"))
-
-    colf1, colf2, colf3 = st.columns(3)
-    f_category = colf1.selectbox(L("category"), ["All"] + list(utils.CATEGORIES.keys()))
-    f_status = colf2.selectbox(L("status"), ["All"] + utils.STATUS_FLOW)
-    f_city = colf3.text_input("City filter (optional)")
-
-    results = db.list_grievances(category=f_category, status=f_status, city=f_city)
-    st.caption(f"{len(results)} grievance(s) found")
-
-    geo_points = [{"lat": r["lat"], "lon": r["lng"]} for r in results if r["lat"] and r["lng"]]
-    if geo_points:
-        st.map(pd.DataFrame(geo_points), zoom=11)
-    else:
-        st.info("No geo-tagged grievances match these filters yet.")
-
-    if results:
-        df = pd.DataFrame(results)[["grievance_code", "category", "status", "priority", "ward",
-                                     "city", "upvote_count", "created_at"]]
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        st.download_button("⬇️ Download as CSV", df.to_csv(index=False).encode("utf-8"),
-                            file_name="nagar_seva_grievances.csv", mime="text/csv")
-
-# LEADERBOARD
-
-elif page == L("nav_leaderboard"):
-    st.title(L("nav_leaderboard"))
-    st.caption("Inspired by India's annual Swachh Survekshan cleanliness rankings — "
-               "healthy competition between wards drives real civic improvement.")
-
-    st.markdown("#### 🏘️ Top Wards")
-    wards = db.ward_leaderboard()
-    if wards:
-        medals = ["🥇", "🥈", "🥉"]
-        for i, w in enumerate(wards):
-            medal = medals[i] if i < 3 else f"{i+1}."
-            st.write(f"{medal} **{w['ward']}** — {w['total_points']} points "
-                     f"({w['citizen_count']} active citizens)")
-    else:
-        st.info("No ward data yet — be the first to put your ward on the map!")
-
-    st.markdown("#### 🙋 Top Citizens")
-    users = db.user_leaderboard()
-    if users:
-        df = pd.DataFrame(users)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-    else:
-        st.info("No citizens registered yet.")
-
-# AWARENESS CORNER
-
-elif page == L("nav_awareness"):
-    st.title(L("nav_awareness"))
-
-    st.markdown("#### 📅 Festival & Civic Awareness Calendar (2026)")
-    for f in utils.FESTIVALS_2026:
-        f_date = datetime.strptime(f["date"], "%Y-%m-%d").date()
-        is_past = f_date < datetime.now().date()
-        with st.expander(f"{'✅' if is_past else '📌'} {f['name']} — {f_date.strftime('%d %b %Y')}"):
-            st.write(f["tip"])
-
-    st.markdown("---")
-    st.markdown("#### ♻️ Waste Segregation Guide (Swachh Bharat Mission)")
-    for k, v in utils.waste_segregation_guide().items():
-        st.write(f"**{k}**")
-        st.caption(v)
-
-    st.markdown("---")
-    st.markdown("#### 🚨 Emergency & Public Helplines")
-    cols = st.columns(2)
-    items = list(utils.EMERGENCY_NUMBERS.items())
-    half = len(items) // 2 + 1
-    for i, (label, number) in enumerate(items):
-        cols[0 if i < half else 1].write(f"{label}: **{number}**")
-
-# ADMIN PANEL
-
-elif page == L("nav_admin"):
-    st.title(L("nav_admin"))
-    st.caption("For municipal officers / ward officials. (Demo password-only auth — "
-               "use proper role-based auth such as SSO in a real deployment.)")
-
-    pwd = st.text_input("Admin password", type="password")
-    if pwd != ADMIN_PASSWORD:
-        if pwd:
-            st.error("Incorrect password.")
-        st.stop()
-
-    st.success("Authenticated as Municipal Admin")
-
-    tab1, tab2 = st.tabs(["📋 Manage Grievances", "📊 Analytics"])
-
-    with tab1:
-        colf1, colf2 = st.columns(2)
-        f_status = colf1.selectbox("Filter by status", ["All"] + utils.STATUS_FLOW, key="admin_status")
-        f_category = colf2.selectbox("Filter by category", ["All"] + list(utils.CATEGORIES.keys()),
-                                      key="admin_cat")
-        grievances = db.list_grievances(category=f_category, status=f_status)
-        st.caption(f"{len(grievances)} grievance(s)")
-
-        for g in grievances:
-            with st.expander(f"{utils.STATUS_COLORS.get(g['status'],'')} {g['grievance_code']} — "
-                              f"{g['category']} ({g['priority']} priority, 👍 {g['upvote_count']})"):
-                st.write(f"**Description:** {g['description']}")
-                st.write(f"**Location:** {g['address'] or '—'}, Ward: {g['ward'] or '—'}, "
-                         f"City: {g['city'] or '—'}")
-                st.write(f"**Filed by:** {g['name']} ({g['mobile']}) on {g['created_at']}")
-
-                new_status = st.selectbox("Update status", utils.STATUS_FLOW,
-                                           index=utils.STATUS_FLOW.index(g["status"])
-                                           if g["status"] in utils.STATUS_FLOW else 0,
-                                           key=f"status_{g['grievance_code']}")
-                remark = st.text_input("Remark", key=f"remark_{g['grievance_code']}")
-                new_dept = st.text_input("Department", value=g["department"] or "",
-                                          key=f"dept_{g['grievance_code']}")
-
-                if st.button("💾 Save update", key=f"save_{g['grievance_code']}"):
-                    db.update_status(g["grievance_code"], new_status, remark, "Municipal Admin")
-                    db.update_department(g["grievance_code"], new_dept)
-                    if new_status == "Resolved" and g["mobile"]:
-                        db.add_points(g["mobile"], utils.POINTS_FOR_RESOLVED_BONUS)
-                    st.success("Updated.")
-                    st.rerun()
-
-    with tab2:
-        stats = db.get_stats()
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total", stats["total"])
-        c2.metric("Resolved", stats["resolved"])
-        c3.metric("Pending", stats["pending"])
-
-        if stats["by_category"]:
-            cat_df = pd.DataFrame(stats["by_category"]).set_index("category")
-            st.markdown("##### By Category")
-            st.bar_chart(cat_df)
-
-        if stats["by_status"]:
-            status_df = pd.DataFrame(stats["by_status"]).set_index("status")
-            st.markdown("##### By Status")
-            st.bar_chart(status_df)
-
-        all_g = db.list_grievances()
-        if all_g:
-            df = pd.DataFrame(all_g)
-            st.download_button("⬇️ Export full dataset (CSV)", df.to_csv(index=False).encode("utf-8"),
-                                file_name="nagar_seva_full_export.csv", mime="text/csv")
+            print("\n❌ Invalid OTP!")
+        
+        input("\nPress Enter to continue...")
+    
+    def logout_user(self):
+        """Handle user logout"""
+        self.current_user = None
+        print("\n✅ Logged out successfully!")
+        input("\nPress Enter to continue...")
+    
+    # GRIEVANCE OPERATIONS
+    
+    def report_grievance(self):
+        """Handle reporting a new grievance"""
+        if not self.current_user:
+            print("\n❌ Please login first!")
+            input("\nPress Enter to continue...")
+            return
+        
+        self.clear_screen()
+        print_header("📝 REPORT A GRIEVANCE")
+        
+        # Show categories
+        print("\n📂 Select Category:")
+        for key, value in CATEGORIES.items():
+            print(f"  {key}. {value}")
+        
+        category_choice = input("\n👉 Choose category (1-9): ").strip()
+        
+        if not Validator.is_valid_category(category_choice):
+            print("\n❌ Invalid category!")
+            input("\nPress Enter to continue...")
+            return
+        
+        description = input("\n📝 Describe the issue: ").strip()
+        
+        if not validate_input(description):
+            print("\n❌ Description is required!")
+            input("\nPress Enter to continue...")
+            return
+        
+        location = input("\n📍 Location/Address: ").strip()
+        
+        if not validate_input(location):
+            print("\n❌ Location is required!")
+            input("\nPress Enter to continue...")
+            return
+        
+        # Generate grievance ID
+        grievance_id = self.grievance_db.generate_grievance_id()
+        
+        # Create grievance
+        result = self.grievance_db.create_grievance(
+            grievance_id,
+            self.current_user['mobile'],
+            self.current_user['name'],
+            CATEGORIES[category_choice],
+            description,
+            location
+        )
+        
+        if result:
+            # Add status history
+            self.history_db.add_history(grievance_id, 'Submitted', 'Grievance submitted')
+            
+            # Add points
+            self.user_db.update_user_points(self.current_user['mobile'], POINTS_FOR_REPORT)
+            self.current_user['points'] += POINTS_FOR_REPORT
+            
+            print(f"\n✅ Grievance Reported Successfully!")
+            print(f"📋 Your Grievance ID: {grievance_id}")
+            print(f"⭐ You earned {POINTS_FOR_REPORT} Swachh Citizen points!")
+        else:
+            print("\n❌ Failed to create grievance!")
+        
+        input("\nPress Enter to continue...")
+    
+    def view_my_grievances(self):
+        """View user's own grievances"""
+        if not self.current_user:
+            print("\n❌ Please login first!")
+            input("\nPress Enter to continue...")
+            return
+        
+        self.clear_screen()
+        print_header("🔍 MY GRIEVANCES")
+        
+        grievances = self.grievance_db.get_grievances_by_mobile(self.current_user['mobile'])
+        
+        if not grievances:
+            print("\n📭 You haven't filed any grievances yet.")
+            input("\nPress Enter to continue...")
+            return
+        
+        print(f"\n📋 Your Grievances ({len(grievances)} total):\n")
+        
+        for i, g in enumerate(grievances, 1):
+            icon = display_status_icon(g['status'])
+            print(f"  {i}. {g['id']}")
+            print(f"     Category: {g['category']}")
+            print(f"     Status: {icon} {g['status']}")
+            print(f"     Upvotes: 👍 {g['upvotes']}")
+            print(f"     Date: {g['created_at']}")
+            print("-"*40)
+        
+        # Option to view details
+        choice = input("\n👉 Enter grievance number to view details (or 0 to cancel): ").strip()
+        
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(grievances):
+                self.display_grievance_details(grievances[idx]['id'])
+        except ValueError:
+            pass
+    
+    def display_grievance_details(self, grievance_id):
+        """Display detailed grievance information"""
+        self.clear_screen()
+        print_header("📋 GRIEVANCE DETAILS")
+        
+        grievance = self.grievance_db.get_grievance_by_id(grievance_id)
+        
+        if not grievance:
+            print("\n❌ Grievance not found!")
+            input("\nPress Enter to continue...")
+            return
+        
+        print(f"\nID: {grievance['id']}")
+        print(f"Category: {grievance['category']}")
+        print(f"Status: {display_status_icon(grievance['status'])} {grievance['status']}")
+        print(f"Description: {grievance['description']}")
+        print(f"Location: {grievance['location']}")
+        print(f"Upvotes: 👍 {grievance['upvotes']}")
+        print(f"Reported by: {grievance['name']}")
+        print(f"Created: {grievance['created_at']}")
+        
+        # Show status history
+        print("\n📊 Status History:")
+        history = self.history_db.get_history(grievance_id)
+        for h in history:
+            print(f"  ⏰ {h['status']} - {h['remark']} ({h['updated_at']})")
+        
+        input("\nPress Enter to continue...")
+    
+    def track_grievance_by_id(self):
+        """Track a grievance by ID"""
+        self.clear_screen()
+        print_header("🔍 TRACK GRIEVANCE BY ID")
+        
+        grievance_id = input("Enter Grievance ID (e.g., MCG-2026-000001): ").strip().upper()
+        
+        if not grievance_id:
+            print("\n❌ Please enter a grievance ID!")
+            input("\nPress Enter to continue...")
+            return
+        
+        self.display_grievance_details(grievance_id)
+    
+    def view_all_grievances(self):
+        """View all grievances"""
+        self.clear_screen()
+        print_header("📋 ALL GRIEVANCES")
+        
+        grievances = self.grievance_db.get_all_grievances()
+        
+        if not grievances:
+            print("\n📭 No grievances found.")
+            input("\nPress Enter to continue...")
+            return
+        
+        print(f"\n📊 Total Grievances: {len(grievances)}\n")
+        
+        for g in grievances[:20]:
+            icon = display_status_icon(g['status'])
+            print(f"📌 {g['id']}")
+            print(f"   Category: {g['category']}")
+            print(f"   Status: {icon} {g['status']}")
+            print(f"   Upvotes: 👍 {g['upvotes']}")
+            print(f"   Reported by: {g['name']}")
+            print("-"*40)
+        
+        if len(grievances) > 20:
+            print(f"... and {len(grievances) - 20} more grievances")
+        
+        input("\nPress Enter to continue...")
+    
+    def upvote_grievance(self):
+        """Upvote a grievance"""
+        if not self.current_user:
+            print("\n❌ Please login first!")
+            input("\nPress Enter to continue...")
+            return
+        
+        self.clear_screen()
+        print_header("👍 UPVOTE A GRIEVANCE")
+        
+        grievance_id = input("Enter Grievance ID to upvote: ").strip().upper()
+        
+        if not grievance_id:
+            print("\n❌ Please enter a grievance ID!")
+            input("\nPress Enter to continue...")
+            return
+        
+        # Check if grievance exists
+        grievance = self.grievance_db.get_grievance_by_id(grievance_id)
+        
+        if not grievance:
+            print("\n❌ Grievance not found!")
+            input("\nPress Enter to continue...")
+            return
+        
+        # Check if user is the reporter
+        if grievance['mobile'] == self.current_user['mobile']:
+            print("\n❌ You cannot upvote your own grievance!")
+            input("\nPress Enter to continue...")
+            return
+        
+        # Check if already upvoted
+        if self.upvote_db.has_upvoted(grievance_id, self.current_user['mobile']):
+            print("\n❌ You already upvoted this grievance!")
+            input("\nPress Enter to continue...")
+            return
+        
+        # Add upvote
+        result = self.upvote_db.add_upvote(grievance_id, self.current_user['mobile'])
+        
+        if result:
+            # Update grievance upvote count
+            self.grievance_db.add_upvote(grievance_id)
+            
+            # Add points
+            self.user_db.update_user_points(self.current_user['mobile'], POINTS_FOR_UPVOTE)
+            self.current_user['points'] += POINTS_FOR_UPVOTE
+            
+            print(f"\n✅ Upvoted successfully!")
+            print(f"⭐ You earned {POINTS_FOR_UPVOTE} points for upvoting!")
+        else:
+            print("\n❌ Failed to upvote!")
+        
+        input("\nPress Enter to continue...")
+    
+    def search_grievances(self):
+        """Search grievances"""
+        self.clear_screen()
+        print_header("🔍 SEARCH GRIEVANCES")
+        
+        search_term = input("\nEnter search term (description or location): ").strip()
+        
+        if not search_term:
+            print("\n❌ Please enter a search term!")
+            input("\nPress Enter to continue...")
+            return
+        
+        results = self.grievance_db.search_grievances(search_term)
+        
+        if not results:
+            print(f"\n📭 No grievances found matching '{search_term}'")
+        else:
+            print(f"\n📋 Found {len(results)} grievances:\n")
+            for g in results[:10]:
+                icon = display_status_icon(g['status'])
+                print(f"📌 {g['id']

@@ -7,7 +7,7 @@ from mysql.connector import Error
 import datetime
 
 class Database:
-    """Handle all database operations"""
+    #Handle all database operations
     
     def __init__(self, host='localhost', database='nagar_seva', user='root', password=''):
         self.connection = None
@@ -18,7 +18,7 @@ class Database:
         self.connect()
     
     def connect(self):
-        """Connect to MySQL database"""
+        #Connect to MySQL database
         try:
             self.connection = mysql.connector.connect(
                 host=self.host,
@@ -36,7 +36,7 @@ class Database:
             exit()
     
     def execute_query(self, query, params=None):
-        """Execute a query and return results"""
+        #Execute a query and return results
         cursor = self.connection.cursor(dictionary=True)
         try:
             cursor.execute(query, params)
@@ -54,7 +54,7 @@ class Database:
             return None
     
     def execute_insert(self, query, params=None):
-        """Execute an INSERT query and return the last inserted ID"""
+        #Execute an INSERT query and return the last inserted ID
         cursor = self.connection.cursor()
         try:
             cursor.execute(query, params)
@@ -68,20 +68,20 @@ class Database:
             return None
     
     def close(self):
-        """Close database connection"""
+        #Close database connection
         if self.connection:
             self.connection.close()
             print("✅ Database connection closed")
 
 
 class UserDB:
-    """User-related database operations"""
+    #User-related database operations
     
     def __init__(self, db):
         self.db = db
     
     def create_user(self, name, mobile, ward, city):
-        """Create a new user"""
+        #Create a new user
         query = """
             INSERT INTO users (mobile, name, ward, city, points)
             VALUES (%s, %s, %s, %s, 0)
@@ -89,18 +89,18 @@ class UserDB:
         return self.db.execute_insert(query, (mobile, name, ward, city))
     
     def get_user_by_mobile(self, mobile):
-        """Get user by mobile number"""
+        #Get user by mobile number
         query = "SELECT * FROM users WHERE mobile = %s"
         result = self.db.execute_query(query, (mobile,))
         return result[0] if result else None
     
     def update_user_points(self, mobile, points_to_add):
-        """Update user points"""
+        #Update user points
         query = "UPDATE users SET points = points + %s WHERE mobile = %s"
         return self.db.execute_query(query, (points_to_add, mobile))
     
     def get_leaderboard(self, limit=10):
-        """Get top users by points"""
+        #Get top users by points
         query = """
             SELECT name, mobile, points, ward, city 
             FROM users 
@@ -110,19 +110,19 @@ class UserDB:
         return self.db.execute_query(query, (limit,))
     
     def get_all_users(self):
-        """Get all users"""
+        #Get all users
         query = "SELECT * FROM users ORDER BY name"
         return self.db.execute_query(query)
 
 
 class GrievanceDB:
-    """Grievance-related database operations"""
+    #Grievance-related database operations
     
     def __init__(self, db):
         self.db = db
     
     def generate_grievance_id(self):
-        """Generate a unique grievance ID"""
+        #Generate a unique grievance ID
         year = datetime.datetime.now().year
         query = "SELECT COUNT(*) as count FROM grievances WHERE id LIKE %s"
         result = self.db.execute_query(query, (f"MCG-{year}-%",))
@@ -135,7 +135,7 @@ class GrievanceDB:
         return f"MCG-{year}-{str(count).zfill(6)}"
     
     def create_grievance(self, grievance_id, mobile, name, category, description, location):
-        """Create a new grievance"""
+        #Create a new grievance
         query = """
             INSERT INTO grievances (id, mobile, name, category, description, location)
             VALUES (%s, %s, %s, %s, %s, %s)
@@ -144,33 +144,33 @@ class GrievanceDB:
         return self.db.execute_insert(query, params)
     
     def get_grievance_by_id(self, grievance_id):
-        """Get grievance by ID"""
+        #Get grievance by ID
         query = "SELECT * FROM grievances WHERE id = %s"
         result = self.db.execute_query(query, (grievance_id,))
         return result[0] if result else None
     
     def get_grievances_by_mobile(self, mobile):
-        """Get all grievances for a user"""
+        #Get all grievances for a user
         query = "SELECT * FROM grievances WHERE mobile = %s ORDER BY created_at DESC"
         return self.db.execute_query(query, (mobile,))
     
     def get_all_grievances(self):
-        """Get all grievances"""
+        #Get all grievances
         query = "SELECT * FROM grievances ORDER BY created_at DESC"
         return self.db.execute_query(query)
     
     def update_grievance_status(self, grievance_id, new_status):
-        """Update grievance status"""
+        #Update grievance status
         query = "UPDATE grievances SET status = %s WHERE id = %s"
         return self.db.execute_query(query, (new_status, grievance_id))
     
     def add_upvote(self, grievance_id):
-        """Increment upvote count"""
+        #Increment upvote count
         query = "UPDATE grievances SET upvotes = upvotes + 1 WHERE id = %s"
         return self.db.execute_query(query, (grievance_id,))
     
     def search_grievances(self, search_term):
-        """Search grievances by description or location"""
+        #Search grievances by description or location
         query = """
             SELECT * FROM grievances 
             WHERE description LIKE %s OR location LIKE %s
@@ -180,7 +180,7 @@ class GrievanceDB:
         return self.db.execute_query(query, (search_pattern, search_pattern))
     
     def get_stats(self):
-        """Get grievance statistics"""
+        #Get grievance statistics
         total_query = "SELECT COUNT(*) as total FROM grievances"
         total = self.db.execute_query(total_query)[0]['total']
         
@@ -213,13 +213,13 @@ class GrievanceDB:
 
 
 class HistoryDB:
-    """Status history database operations"""
+    #Status history database operations
     
     def __init__(self, db):
         self.db = db
     
     def add_history(self, grievance_id, status, remark):
-        """Add status history entry"""
+        #Add status history entry
         query = """
             INSERT INTO status_history (grievance_id, status, remark)
             VALUES (%s, %s, %s)
@@ -227,7 +227,7 @@ class HistoryDB:
         return self.db.execute_insert(query, (grievance_id, status, remark))
     
     def get_history(self, grievance_id):
-        """Get status history for a grievance"""
+        #Get status history for a grievance
         query = """
             SELECT status, remark, updated_at 
             FROM status_history 
@@ -238,18 +238,18 @@ class HistoryDB:
 
 
 class UpvoteDB:
-    """Upvote database operations"""
+    #Upvote database operations
     
     def __init__(self, db):
         self.db = db
     
     def has_upvoted(self, grievance_id, mobile):
-        """Check if user already upvoted"""
+        #Check if user already upvoted
         query = "SELECT * FROM upvotes WHERE grievance_id = %s AND mobile = %s"
         result = self.db.execute_query(query, (grievance_id, mobile))
         return bool(result)
     
     def add_upvote(self, grievance_id, mobile):
-        """Add an upvote"""
+        #Add an upvote
         query = "INSERT INTO upvotes (grievance_id, mobile) VALUES (%s, %s)"
         return self.db.execute_insert(query, (grievance_id, mobile))
