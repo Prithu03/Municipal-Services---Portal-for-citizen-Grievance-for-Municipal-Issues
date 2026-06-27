@@ -1,330 +1,255 @@
 """
-SQLite persistence layer for the Municipal Service (Citizen Grievance) app.
-
-to Handles users, grievances, status history, and upvotes.+
+Handles all MySQL database operations for Nagar Seva
 """
 
-import sqlite3
-import os
-from datetime import datetime
+import mysql.connector
+from mysql.connector import Error
+import datetime
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "grievance_app.db")
-
-def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
-
-
-def init_db():
-    """Create all tables if they do not already exist."""
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            mobile TEXT UNIQUE NOT NULL,
-            ward TEXT,
-            city TEXT,
-            language TEXT DEFAULT 'en',
-            points INTEGER DEFAULT 0,
-            created_at TEXT
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS grievances (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            grievance_code TEXT UNIQUE NOT NULL,
-            mobile TEXT,
-            name TEXT,
-            category TEXT,
-            description TEXT,
-            lat REAL,
-            lng REAL,
-            address TEXT,
-            ward TEXT,
-            city TEXT,
-            photo_path TEXT,
-            priority TEXT DEFAULT 'Medium',
-            department TEXT,
-            status TEXT DEFAULT 'Submitted',
-            upvote_count INTEGER DEFAULT 0,
-            created_at TEXT,
-            updated_at TEXT
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS status_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            grievance_code TEXT NOT NULL,
-            status TEXT,
-            remark TEXT,
-            updated_by TEXT,
-            timestamp TEXT
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS upvotes (
-            grievance_code TEXT NOT NULL,
-            mobile TEXT NOT NULL,
-            PRIMARY KEY (grievance_code, mobile)
-        )
-    """)
-
-    conn.commit()
-    conn.close()
+class Database:
+    """Handle all database operations"""
+    
+    def __init__(self, host='localhost', database='nagar_seva', user='root', password=''):
+        self.connection = None
+        self.host = host
+        self.database = database
+        self.user = user
+        self.password = password
+        self.connect()
+    
+    def connect(self):
+        """Connect to MySQL database"""
+        try:
+            self.connection = mysql.connector.connect(
+                host=self.host,
+                database=self.database,
+                user=self.user,
+                password=self.password
+            )
+            print("✅ Connected to MySQL database!")
+        except Error as e:
+            print(f"❌ Error connecting to MySQL: {e}")
+            print("\n💡 Please make sure:")
+            print("   1. MySQL is running")
+            print("   2. Database exists")
+            print("   3. Username and password are correct")
+            exit()
+    
+    def execute_query(self, query, params=None):
+        """Execute a query and return results"""
+        cursor = self.connection.cursor(dictionary=True)
+        try:
+            cursor.execute(query, params)
+            if query.strip().upper().startswith('SELECT'):
+                results = cursor.fetchall()
+                cursor.close()
+                return results
+            else:
+                self.connection.commit()
+                cursor.close()
+                return True
+        except Error as e:
+            print(f"❌ Database error: {e}")
+            cursor.close()
+            return None
+    
+    def execute_insert(self, query, params=None):
+        """Execute an INSERT query and return the last inserted ID"""
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(query, params)
+            self.connection.commit()
+            last_id = cursor.lastrowid
+            cursor.close()
+            return last_id
+        except Error as e:
+            print(f"❌ Database error: {e}")
+            cursor.close()
+            return None
+    
+    def close(self):
+        """Close database connection"""
+        if self.connection:
+            self.connection.close()
+            print("✅ Database connection closed")
 
 
-def now_str():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-# Users
-
-def upsert_user(name, mobile, ward="", city="", language="en"):
-    conn = get_connection()
-    cur = conn.cursor()
-    existing = cur.execute("SELECT * FROM users WHERE mobile = ?", (mobile,)).fetchone()
-    if existing:
-        cur.execute(
-            "UPDATE users SET name = ?, ward = ?, city = ?, language = ? WHERE mobile = ?",
-            (name, ward, city, language, mobile),
-        )
-    else:
-        cur.execute(
-            "INSERT INTO users (name, mobile, ward, city, language, points, created_at) "
-            "VALUES (?, ?, ?, ?, ?, 0, ?)",
-            (name, mobile, ward, city, language, now_str()),
-        )
-    conn.commit()
-    conn.close()
-
-
-def get_user(mobile):
-    conn = get_connection()
-    row = conn.execute("SELECT * FROM users WHERE mobile = ?", (mobile,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
-def add_points(mobile, points):
-    conn = get_connection()
-    conn.execute("UPDATE users SET points = points + ? WHERE mobile = ?", (points, mobile))
-    conn.commit()
-    conn.close()
-
-
-def user_leaderboard(limit=10):
-    conn = get_connection()
-    rows = conn.execute(
-        "SELECT name, mobile, ward, city, points FROM users ORDER BY points DESC LIMIT ?",
-        (limit,),
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-def ward_leaderboard(limit=10):
-    conn = get_connection()
-    rows = conn.execute(
+class UserDB:
+    """User-related database operations"""
+    
+    def __init__(self, db):
+        self.db = db
+    
+    def create_user(self, name, mobile, ward, city):
+        """Create a new user"""
+        query = """
+            INSERT INTO users (mobile, name, ward, city, points)
+            VALUES (%s, %s, %s, %s, 0)
         """
-        SELECT ward, SUM(points) as total_points, COUNT(*) as citizen_count
-        FROM users
-        WHERE ward IS NOT NULL AND ward != ''
-        GROUP BY ward
-        ORDER BY total_points DESC
-        LIMIT ?
-        """,
-        (limit,),
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-# Grievances
-
-def _next_grievance_code():
-    """Generate a government-file-style code, e.g. MCG-2026-000123."""
-    conn = get_connection()
-    count = conn.execute("SELECT COUNT(*) as c FROM grievances").fetchone()["c"]
-    conn.close()
-    year = datetime.now().year
-    return f"MCG-{year}-{count + 1:06d}"
-
-
-def create_grievance(mobile, name, category, description, lat, lng, address,
-                      ward, city, photo_path, priority, department):
-    code = _next_grievance_code()
-    conn = get_connection()
-    cur = conn.cursor()
-    ts = now_str()
-    cur.execute(
+        return self.db.execute_insert(query, (mobile, name, ward, city))
+    
+    def get_user_by_mobile(self, mobile):
+        """Get user by mobile number"""
+        query = "SELECT * FROM users WHERE mobile = %s"
+        result = self.db.execute_query(query, (mobile,))
+        return result[0] if result else None
+    
+    def update_user_points(self, mobile, points_to_add):
+        """Update user points"""
+        query = "UPDATE users SET points = points + %s WHERE mobile = %s"
+        return self.db.execute_query(query, (points_to_add, mobile))
+    
+    def get_leaderboard(self, limit=10):
+        """Get top users by points"""
+        query = """
+            SELECT name, mobile, points, ward, city 
+            FROM users 
+            ORDER BY points DESC 
+            LIMIT %s
         """
-        INSERT INTO grievances
-        (grievance_code, mobile, name, category, description, lat, lng, address,
-         ward, city, photo_path, priority, department, status, upvote_count,
-         created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Submitted', 0, ?, ?)
-        """,
-        (code, mobile, name, category, description, lat, lng, address,
-         ward, city, photo_path, priority, department, ts, ts),
-    )
-    cur.execute(
-        "INSERT INTO status_history (grievance_code, status, remark, updated_by, timestamp) "
-        "VALUES (?, 'Submitted', 'Grievance registered by citizen.', ?, ?)",
-        (code, name or mobile, ts),
-    )
-    conn.commit()
-    conn.close()
-    return code
+        return self.db.execute_query(query, (limit,))
+    
+    def get_all_users(self):
+        """Get all users"""
+        query = "SELECT * FROM users ORDER BY name"
+        return self.db.execute_query(query)
 
-def get_grievance_by_code(code):
-    conn = get_connection()
-    row = conn.execute("SELECT * FROM grievances WHERE grievance_code = ?", (code,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
 
-def get_grievances_by_mobile(mobile):
-    conn = get_connection()
-    rows = conn.execute(
-        "SELECT * FROM grievances WHERE mobile = ? ORDER BY created_at DESC", (mobile,)
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+class GrievanceDB:
+    """Grievance-related database operations"""
+    
+    def __init__(self, db):
+        self.db = db
+    
+    def generate_grievance_id(self):
+        """Generate a unique grievance ID"""
+        year = datetime.datetime.now().year
+        query = "SELECT COUNT(*) as count FROM grievances WHERE id LIKE %s"
+        result = self.db.execute_query(query, (f"MCG-{year}-%",))
+        
+        if result and result[0]['count']:
+            count = result[0]['count'] + 1
+        else:
+            count = 1
+        
+        return f"MCG-{year}-{str(count).zfill(6)}"
+    
+    def create_grievance(self, grievance_id, mobile, name, category, description, location):
+        """Create a new grievance"""
+        query = """
+            INSERT INTO grievances (id, mobile, name, category, description, location)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        params = (grievance_id, mobile, name, category, description, location)
+        return self.db.execute_insert(query, params)
+    
+    def get_grievance_by_id(self, grievance_id):
+        """Get grievance by ID"""
+        query = "SELECT * FROM grievances WHERE id = %s"
+        result = self.db.execute_query(query, (grievance_id,))
+        return result[0] if result else None
+    
+    def get_grievances_by_mobile(self, mobile):
+        """Get all grievances for a user"""
+        query = "SELECT * FROM grievances WHERE mobile = %s ORDER BY created_at DESC"
+        return self.db.execute_query(query, (mobile,))
+    
+    def get_all_grievances(self):
+        """Get all grievances"""
+        query = "SELECT * FROM grievances ORDER BY created_at DESC"
+        return self.db.execute_query(query)
+    
+    def update_grievance_status(self, grievance_id, new_status):
+        """Update grievance status"""
+        query = "UPDATE grievances SET status = %s WHERE id = %s"
+        return self.db.execute_query(query, (new_status, grievance_id))
+    
+    def add_upvote(self, grievance_id):
+        """Increment upvote count"""
+        query = "UPDATE grievances SET upvotes = upvotes + 1 WHERE id = %s"
+        return self.db.execute_query(query, (grievance_id,))
+    
+    def search_grievances(self, search_term):
+        """Search grievances by description or location"""
+        query = """
+            SELECT * FROM grievances 
+            WHERE description LIKE %s OR location LIKE %s
+            ORDER BY created_at DESC
+        """
+        search_pattern = f"%{search_term}%"
+        return self.db.execute_query(query, (search_pattern, search_pattern))
+    
+    def get_stats(self):
+        """Get grievance statistics"""
+        total_query = "SELECT COUNT(*) as total FROM grievances"
+        total = self.db.execute_query(total_query)[0]['total']
+        
+        resolved_query = "SELECT COUNT(*) as resolved FROM grievances WHERE status = 'Resolved'"
+        resolved = self.db.execute_query(resolved_query)[0]['resolved']
+        
+        pending = total - resolved
+        
+        category_query = """
+            SELECT category, COUNT(*) as count 
+            FROM grievances 
+            GROUP BY category
+        """
+        categories = self.db.execute_query(category_query)
+        
+        status_query = """
+            SELECT status, COUNT(*) as count 
+            FROM grievances 
+            GROUP BY status
+        """
+        statuses = self.db.execute_query(status_query)
+        
+        return {
+            'total': total,
+            'resolved': resolved,
+            'pending': pending,
+            'by_category': categories,
+            'by_status': statuses
+        }
 
-def list_grievances(category=None, status=None, ward=None, city=None):
-    query = "SELECT * FROM grievances WHERE 1=1"
-    params = []
-    if category and category != "All":
-        query += " AND category = ?"
-        params.append(category)
-    if status and status != "All":
-        query += " AND status = ?"
-        params.append(status)
-    if ward:
-        query += " AND ward LIKE ?"
-        params.append(f"%{ward}%")
-    if city:
-        query += " AND city LIKE ?"
-        params.append(f"%{city}%")
-    query += " ORDER BY created_at DESC"
 
-    conn = get_connection()
-    rows = conn.execute(query, params).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+class HistoryDB:
+    """Status history database operations"""
+    
+    def __init__(self, db):
+        self.db = db
+    
+    def add_history(self, grievance_id, status, remark):
+        """Add status history entry"""
+        query = """
+            INSERT INTO status_history (grievance_id, status, remark)
+            VALUES (%s, %s, %s)
+        """
+        return self.db.execute_insert(query, (grievance_id, status, remark))
+    
+    def get_history(self, grievance_id):
+        """Get status history for a grievance"""
+        query = """
+            SELECT status, remark, updated_at 
+            FROM status_history 
+            WHERE grievance_id = %s 
+            ORDER BY updated_at DESC
+        """
+        return self.db.execute_query(query, (grievance_id,))
 
-def update_status(code, new_status, remark, updated_by):
-    conn = get_connection()
-    ts = now_str()
-    conn.execute(
-        "UPDATE grievances SET status = ?, updated_at = ? WHERE grievance_code = ?",
-        (new_status, ts, code),
-    )
-    conn.execute(
-        "INSERT INTO status_history (grievance_code, status, remark, updated_by, timestamp) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (code, new_status, remark, updated_by, ts),
-    )
-    conn.commit()
-    conn.close()
 
-def update_photo_path(code, photo_path):
-    conn = get_connection()
-    conn.execute(
-        "UPDATE grievances SET photo_path = ? WHERE grievance_code = ?", (photo_path, code)
-    )
-    conn.commit()
-    conn.close()
-
-def update_department(code, department):
-    conn = get_connection()
-    conn.execute(
-        "UPDATE grievances SET department = ?, updated_at = ? WHERE grievance_code = ?",
-        (department, now_str(), code),
-    )
-    conn.commit()
-    conn.close()
-
-def get_status_history(code):
-    conn = get_connection()
-    rows = conn.execute(
-        "SELECT * FROM status_history WHERE grievance_code = ? ORDER BY timestamp ASC", (code,)
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-def find_nearby(lat, lng, category, radius_km=0.3):
-    """Return open grievances of the same category within radius_km."""
-    from utils import haversine
-
-    if lat is None or lng is None:
-        return []
-    conn = get_connection()
-    rows = conn.execute(
-        "SELECT * FROM grievances WHERE category = ? AND status NOT IN ('Resolved', 'Closed', 'Rejected') "
-        "AND lat IS NOT NULL AND lng IS NOT NULL",
-        (category,),
-    ).fetchall()
-    conn.close()
-    nearby = []
-    for r in rows:
-        d = haversine(lat, lng, r["lat"], r["lng"])
-        if d <= radius_km:
-            item = dict(r)
-            item["distance_km"] = round(d, 3)
-            nearby.append(item)
-    nearby.sort(key=lambda x: x["distance_km"])
-    return nearby
-
-def add_upvote(code, mobile):
-    """Returns True if upvote was newly added, False if already upvoted."""
-    conn = get_connection()
-    try:
-        conn.execute("INSERT INTO upvotes (grievance_code, mobile) VALUES (?, ?)", (code, mobile))
-        conn.execute(
-            "UPDATE grievances SET upvote_count = upvote_count + 1 WHERE grievance_code = ?",
-            (code,),
-        )
-        conn.commit()
-        success = True
-    except sqlite3.IntegrityError:
-        success = False
-    conn.close()
-    return success
-
-def has_upvoted(code, mobile):
-    conn = get_connection()
-    row = conn.execute(
-        "SELECT 1 FROM upvotes WHERE grievance_code = ? AND mobile = ?", (code, mobile)
-    ).fetchone()
-    conn.close()
-    return row is not None
-
-def get_stats():
-    conn = get_connection()
-    total = conn.execute("SELECT COUNT(*) as c FROM grievances").fetchone()["c"]
-    resolved = conn.execute(
-        "SELECT COUNT(*) as c FROM grievances WHERE status = 'Resolved'"
-    ).fetchone()["c"]
-    pending = conn.execute(
-        "SELECT COUNT(*) as c FROM grievances WHERE status NOT IN ('Resolved', 'Closed', 'Rejected')"
-    ).fetchone()["c"]
-    by_category = conn.execute(
-        "SELECT category, COUNT(*) as c FROM grievances GROUP BY category ORDER BY c DESC"
-    ).fetchall()
-    by_status = conn.execute(
-        "SELECT status, COUNT(*) as c FROM grievances GROUP BY status"
-    ).fetchall()
-    conn.close()
-    return {
-        "total": total,
-        "resolved": resolved,
-        "pending": pending,
-        "by_category": [dict(r) for r in by_category],
-        "by_status": [dict(r) for r in by_status],
-    }
+class UpvoteDB:
+    """Upvote database operations"""
+    
+    def __init__(self, db):
+        self.db = db
+    
+    def has_upvoted(self, grievance_id, mobile):
+        """Check if user already upvoted"""
+        query = "SELECT * FROM upvotes WHERE grievance_id = %s AND mobile = %s"
+        result = self.db.execute_query(query, (grievance_id, mobile))
+        return bool(result)
+    
+    def add_upvote(self, grievance_id, mobile):
+        """Add an upvote"""
+        query = "INSERT INTO upvotes (grievance_id, mobile) VALUES (%s, %s)"
+        return self.db.execute_insert(query, (grievance_id, mobile))
